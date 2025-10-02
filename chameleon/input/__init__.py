@@ -1,0 +1,1 @@
+"""Real webcam input handling."""
