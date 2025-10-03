@@ -5,6 +5,7 @@ from pathlib import Path
 import numpy as np
 
 from chameleon.config import SegmentationModel
+from chameleon.engine.mediapipe import MediaPipeEngine
 
 
 class SegmentationEngine:
@@ -28,7 +29,7 @@ class SegmentationEngine:
         self.use_clahe = use_clahe
         self.model_path: Path | None = None
         self.session = None
-        self.mp_segmentation = None
+        self.mp_engine: MediaPipeEngine | None = None
 
         # Instance variables for letterbox tracking
         self._orig_shape = None
@@ -135,16 +136,16 @@ class SegmentationEngine:
                     print("[Segmentation] TensorRT available - using FP16 acceleration")
                     cache_path = str(Path.home() / ".cache" / "chameleon" / "tensorrt")
                     Path(cache_path).mkdir(parents=True, exist_ok=True)
-                    providers.append(
-                        (
-                            "TensorRTExecutionProvider",
-                            {
-                                "trt_fp16_enable": True,  # 2x speedup
-                                "trt_engine_cache_enable": True,
-                                "trt_engine_cache_path": cache_path,
-                            },
-                        )
-                    )
+                    # providers.append(
+                    #     (
+                    #         "TensorrtExecutionProvider",
+                    #         {
+                    #             "trt_fp16_enable": True,  # 2x speedup
+                    #             "trt_engine_cache_enable": True,
+                    #             "trt_engine_cache_path": cache_path,
+                    #         },
+                    #     )
+                    # )
                 else:
                     print("[Segmentation] TensorRT not available")
 
@@ -161,14 +162,18 @@ class SegmentationEngine:
                         )
                     )
                 else:
-                    print("[Segmentation] WARNING: CUDA not available, falling back to CPU")
+                    print(
+                        "[Segmentation] WARNING: CUDA not available, falling back to CPU"
+                    )
 
             # CPU fallback (always available)
-            providers.append("CPUExecutionProvider")
+            # providers.append("CPUExecutionProvider")
 
             # Session options for performance
             sess_options = ort.SessionOptions()
-            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            sess_options.graph_optimization_level = (
+                ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+            )
             sess_options.intra_op_num_threads = 2  # Don't hog all cores
 
             self.session = ort.InferenceSession(
@@ -180,7 +185,9 @@ class SegmentationEngine:
             active_provider = self.session.get_providers()[0]
             print(f"[Segmentation] Active provider: {active_provider}")
             if active_provider == "CPUExecutionProvider":
-                print("[Segmentation] ⚠️  WARNING: Using CPU inference - this will be VERY SLOW!")
+                print(
+                    "[Segmentation] ⚠️  WARNING: Using CPU inference - this will be VERY SLOW!"
+                )
                 print("[Segmentation] ⚠️  Install onnxruntime-gpu for GPU acceleration")
 
         except ImportError:
@@ -194,22 +201,13 @@ class SegmentationEngine:
         try:
             import onnxruntime as ort
 
-            return "TensorRTExecutionProvider" in ort.get_available_providers()
+            return "TensorrtExecutionProvider" in ort.get_available_providers()
         except ImportError:
             return False
 
     def _init_mediapipe(self):
-        """Initialize MediaPipe (legacy)."""
-        try:
-            import mediapipe as mp
-
-            self.mp_segmentation = mp.solutions.selfie_segmentation.SelfieSegmentation(
-                model_selection=1
-            )
-        except ImportError:
-            raise RuntimeError(
-                "mediapipe is required for MediaPipe model. Install with: pip install mediapipe"
-            ) from None
+        """Initialize MediaPipe with modern GPU-accelerated engine."""
+        self.mp_engine = MediaPipeEngine(use_gpu=self.use_gpu)
 
     def segment(self, frame: np.ndarray) -> np.ndarray:
         """Run segmentation and return binary mask.
@@ -256,16 +254,15 @@ class SegmentationEngine:
         return mask
 
     def _segment_mediapipe(self, frame: np.ndarray) -> np.ndarray:
-        """Run MediaPipe segmentation (legacy).
+        """Run MediaPipe segmentation using modern GPU-accelerated engine.
 
         Args:
-            frame: Input frame
+            frame: Input frame in BGR format
 
         Returns:
-            Binary mask
+            Binary mask (0-1 range)
         """
-        result = self.mp_segmentation.process(frame)
-        return result.segmentation_mask
+        return self.mp_engine.segment(frame)
 
     def _letterbox(self, img: np.ndarray, new_shape: tuple = (640, 640)) -> tuple:
         """Letterbox resize with aspect ratio preservation.
@@ -284,7 +281,10 @@ class SegmentationEngine:
         r = min(new_shape[0] / shape[0], new_shape[1] / shape[1])
 
         # Compute new unpadded dimensions
-        new_unpad = (int(round(shape[1] * r)), int(round(shape[0] * r)))  # (width, height)
+        new_unpad = (
+            int(round(shape[1] * r)),
+            int(round(shape[0] * r)),
+        )  # (width, height)
 
         # Resize
         if shape[::-1] != new_unpad:  # if shapes are different
@@ -378,7 +378,9 @@ class SegmentationEngine:
         class_ids = class_scores.argmax(axis=1)
 
         # Filter for person class with confidence threshold
-        person_mask_indices = (class_ids == person_class_id) & (max_scores >= confidence_threshold)
+        person_mask_indices = (class_ids == person_class_id) & (
+            max_scores >= confidence_threshold
+        )
 
         if not person_mask_indices.any():
             # No person detected, return empty mask
@@ -403,7 +405,9 @@ class SegmentationEngine:
             combined_mask = masks.max(axis=0) if masks.shape[0] > 1 else masks[0]
 
             # Resize mask from 160x160 to 640x640 (model output size)
-            mask_640 = cv2.resize(combined_mask, (640, 640), interpolation=cv2.INTER_LINEAR)
+            mask_640 = cv2.resize(
+                combined_mask, (640, 640), interpolation=cv2.INTER_LINEAR
+            )
 
             # Remove letterbox padding and resize to original shape
             # Unpad
@@ -426,9 +430,9 @@ class SegmentationEngine:
 
     def close(self):
         """Close the segmentation engine and release resources."""
-        if self.mp_segmentation:
-            self.mp_segmentation.close()
-            self.mp_segmentation = None
+        if self.mp_engine:
+            self.mp_engine.close()
+            self.mp_engine = None
         self.session = None
 
     def __enter__(self):

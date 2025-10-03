@@ -221,6 +221,14 @@ sudo modprobe v4l2loopback devices=1 exclusive_caps=1 video_nr=10 max_buffers=10
 **Python 3.13+ compatibility:**
 - Use `uv` or `pyenv`` to install Python 3.12 (MediaPipe requirement)
 
+**CUDA not found:**
+
+TO use CUDA, you need to install CUDA Toolkit as the system often just comes with CUDA driver. CUDA header files typically located at `/usr/lib/` or `/usr/` . Find them using `ls /usr/lib/x86_64-linux-gnu/ | grep cuda`.
+```
+sudo apt install nvidia-cuda-toolkit
+```
+After installation, find the new installed headers for toolkit using `ls /usr/lib/x86_64-linux-gnu/ | grep libcublas`
+
 For more issues, see [GitHub Issues](https://github.com/hoangtrann/chameleon/issues).
 
 ## 📝 License

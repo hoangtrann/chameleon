@@ -93,7 +93,9 @@ class HWAccelManager:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
 
-    def select_best(self, preference: HWAccelMethod = HWAccelMethod.AUTO) -> HWAccelMethod:
+    def select_best(
+        self, preference: HWAccelMethod = HWAccelMethod.AUTO
+    ) -> HWAccelMethod:
         """Select best available hardware acceleration method.
 
         Args:
@@ -136,7 +138,7 @@ class HWAccelManager:
                 Path(cache_path).mkdir(parents=True, exist_ok=True)
                 providers.append(
                     (
-                        "TensorRTExecutionProvider",
+                        "TensorrtExecutionProvider",
                         {
                             "trt_fp16_enable": True,
                             "trt_engine_cache_enable": True,
@@ -166,7 +168,7 @@ class HWAccelManager:
         try:
             import onnxruntime as ort
 
-            return "TensorRTExecutionProvider" in ort.get_available_providers()
+            return "TensorrtExecutionProvider" in ort.get_available_providers()
         except ImportError:
             return False
 
