@@ -1,5 +1,6 @@
 """Typer-based CLI interface for Linux Fake Background Webcam."""
 
+import logging
 import signal
 import sys
 from pathlib import Path
@@ -12,6 +13,8 @@ from chameleon.config import CameraConfig, Config, ProcessingConfig, Segmentatio
 from chameleon.core.pipeline import ProcessingPipeline
 from chameleon.utils import create_filter_config, parse_filter_string
 
+logger = logging.getLogger(__name__)
+
 app = typer.Typer(
     name="chameleon",
     help="Chameleon - Virtual webcam with background effects",
@@ -19,6 +22,23 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+
+def setup_logging(verbose: bool = False):
+    """Configure logging for the application.
+
+    Args:
+        verbose: Enable verbose (DEBUG) logging
+    """
+    level = logging.DEBUG if verbose else logging.INFO
+
+    # Configure root logger
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+        force=True,  # Override any existing configuration
+    )
 
 
 @app.command()
@@ -104,6 +124,10 @@ def run(
         bool,
         typer.Option("--dump", help="Dump filter configuration and exit"),
     ] = False,
+    verbose: Annotated[
+        bool,
+        typer.Option("--verbose", help="Enable verbose logging"),
+    ] = False,
 ):
     """Run the virtual webcam with background effects.
 
@@ -122,6 +146,9 @@ def run(
         # Performance tuning
         chameleon run --model yolo11n-seg --adaptive-threshold --temporal-smoothing 0.3
     """
+    # Setup logging first
+    setup_logging(verbose)
+
     # Parse filter strings into FilterConfig objects
     selfie_filters = parse_filter_string(selfie)
     selfie_config = create_filter_config(selfie_filters, "selfie")
@@ -191,24 +218,21 @@ def run(
     try:
         pipeline = ProcessingPipeline(app_config)
 
-        # Setup signal handlers
+        # Setup graceful shutdown on CTRL-C
         def sigint_handler(sig, frame):
-            pipeline.toggle_pause()
-
-        def sigquit_handler(sig, frame):
+            logger.info("Shutdown signal received, stopping gracefully...")
             console.print("\n[yellow]Stopping...[/yellow]")
             pipeline.stop()
             sys.exit(0)
 
         signal.signal(signal.SIGINT, sigint_handler)
-        signal.signal(signal.SIGQUIT, sigquit_handler)
 
         # Run pipeline
         with pipeline:
             pipeline.run()
 
     except KeyboardInterrupt:
-        console.print("\n[yellow]Interrupted[/yellow]")
+        console.print("\n[yellow]Shutting down...[/yellow]")
     except Exception as e:
         console.print(f"[bold red]Error:[/bold red] {e}")
         raise

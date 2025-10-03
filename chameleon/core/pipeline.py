@@ -1,5 +1,6 @@
 """Main processing pipeline coordinator."""
 
+import logging
 import time
 
 import numpy as np
@@ -11,6 +12,8 @@ from chameleon.output.monitor import VirtualCameraMonitor
 from chameleon.output.virtual import VirtualCameraOutput
 from chameleon.processing.compositor import ImageCompositor
 from chameleon.processing.segmentation import SegmentationEngine
+
+logger = logging.getLogger(__name__)
 
 
 class ProcessingPipeline:
@@ -37,10 +40,10 @@ class ProcessingPipeline:
 
     def setup(self):
         """Setup all pipeline components."""
-        print("\n[Setup] Initializing pipeline components...")
+        logger.info("Initializing pipeline components...")
 
         # Initialize real camera
-        print("[Setup] Opening real camera...")
+        logger.info("Opening real camera...")
         self.camera = RealCamera(
             device=self.config.real_camera.device,
             width=self.config.real_camera.width,
@@ -48,36 +51,36 @@ class ProcessingPipeline:
             fps=self.config.real_camera.fps,
             codec=self.config.real_camera.codec,
         )
-        print("[Setup] Real camera ready")
+        logger.info("Real camera ready")
 
         # Initialize virtual camera output
-        print("[Setup] Opening virtual camera output...")
+        logger.info("Opening virtual camera output...")
         self.output = VirtualCameraOutput(
             device=self.config.virtual_camera,
             width=self.config.real_camera.width,
             height=self.config.real_camera.height,
         )
-        print("[Setup] Virtual camera output ready")
+        logger.info("Virtual camera output ready")
 
         # Initialize monitor for on-demand processing (unless disabled)
         if not self.config.no_ondemand:
             try:
-                print("[Setup] Setting up camera monitor...")
+                logger.info("Setting up camera monitor...")
                 self.monitor = VirtualCameraMonitor(self.config.virtual_camera)
-                print("[Setup] Camera monitor ready")
+                logger.info("Camera monitor ready")
             except Exception as e:
-                print(f"[Setup] Warning: Could not setup camera monitor: {e}")
-                print("[Setup] On-demand processing disabled")
+                logger.warning("Could not setup camera monitor: %s", e)
+                logger.warning("On-demand processing disabled")
                 self.monitor = None
 
         # Initialize segmentation engine with optimizations
-        print("[Setup] Loading segmentation model (this may take a moment)...")
+        logger.info("Loading segmentation model (this may take a moment)...")
         self.segmentation = SegmentationEngine(
             model=self.config.processing.model,
             use_gpu=True,  # TODO: Make configurable based on hwaccel
             use_clahe=self.config.processing.use_clahe,
         )
-        print("[Setup] Segmentation engine ready")
+        logger.info("Segmentation engine ready")
 
         # Initialize compositor with temporal smoothing
         self.compositor = ImageCompositor(
@@ -147,13 +150,16 @@ class ProcessingPipeline:
         background = None
         if not self.config.background_filter.disabled:
             if self.config.background_filter.file:
+                # TODO: background_image is pre-sized in load_background(), no resize needed
                 background = self.compositor.background_image
             elif self.config.background_filter.solid:
+                # TODO: create_solid_background() returns correctly sized array
                 background = self.compositor.create_solid_background(
                     self.config.background_filter.solid
                 )
 
             # Apply background effects if background exists
+            # TODO: Effects preserve size, no validation needed
             if background is not None and (
                 self.config.background_filter.blur
                 or self.config.background_filter.cmap
@@ -183,15 +189,19 @@ class ProcessingPipeline:
         self.frame_count += 1
         if self.frame_count % 30 == 0:
             fps = 1000.0 / total_time if total_time > 0 else 0
-            print(f"\n[Frame {self.frame_count}] Performance Breakdown (ms):")
-            print(f"  Camera Read:      {camera_time:6.2f}ms")
-            print(f"  Segmentation:     {segment_time:6.2f}ms  <-- Main bottleneck")
-            print(f"  Mask Processing:  {mask_process_time:6.2f}ms")
-            print(f"  Selfie Effects:   {selfie_effects_time:6.2f}ms")
-            print(f"  Background FX:    {bg_effects_time:6.2f}ms")
-            print(f"  Composition:      {composite_time:6.2f}ms")
-            print("  ────────────────────────────")
-            print(f"  TOTAL:            {total_time:6.2f}ms  ({fps:.1f} FPS)")
+            logger.info(
+                "Frame %d Performance: Camera=%.2fms Seg=%.2fms Mask=%.2fms "
+                "Selfie=%.2fms BG=%.2fms Comp=%.2fms TOTAL=%.2fms (%.1f FPS)",
+                self.frame_count,
+                camera_time,
+                segment_time,
+                mask_process_time,
+                selfie_effects_time,
+                bg_effects_time,
+                composite_time,
+                total_time,
+                fps,
+            )
 
         return output_frame
 
@@ -200,40 +210,45 @@ class ProcessingPipeline:
         self.running = True
         target_frame_time = 1.0 / self.config.real_camera.fps
 
-        print("\n" + "=" * 60)
-        print("CHAMELEON - PERFORMANCE MONITOR")
-        print("=" * 60)
-        print("Configuration:")
-        print(f"  Model:              {self.config.processing.model.value}")
-        print(
-            f"  Resolution:         {self.config.real_camera.width}x{self.config.real_camera.height}"
+        logger.info("=" * 60)
+        logger.info("CHAMELEON - PERFORMANCE MONITOR")
+        logger.info("=" * 60)
+        logger.info("Configuration:")
+        logger.info("  Model:              %s", self.config.processing.model.value)
+        logger.info(
+            "  Resolution:         %dx%d",
+            self.config.real_camera.width,
+            self.config.real_camera.height,
         )
-        print(f"  Target FPS:         {self.config.real_camera.fps}")
-        print(
-            f"  CLAHE:              {'ENABLED' if self.config.processing.use_clahe else 'DISABLED'}"
+        logger.info("  Target FPS:         %d", self.config.real_camera.fps)
+        logger.info(
+            "  CLAHE:              %s",
+            "ENABLED" if self.config.processing.use_clahe else "DISABLED",
         )
-        print(
-            f"  Adaptive Threshold: {'ENABLED' if self.config.processing.adaptive_threshold else 'DISABLED'}"
+        logger.info(
+            "  Adaptive Threshold: %s",
+            "ENABLED" if self.config.processing.adaptive_threshold else "DISABLED",
         )
-        print(f"  Temporal Smoothing: {self.config.processing.temporal_smoothing}")
-        print(
-            f"  Fast Blur:          {'ENABLED' if self.config.processing.fast_blur else 'DISABLED'}"
+        logger.info("  Temporal Smoothing: %s", self.config.processing.temporal_smoothing)
+        logger.info(
+            "  Fast Blur:          %s",
+            "ENABLED" if self.config.processing.fast_blur else "DISABLED",
         )
-        print(
-            f"  Background Blur:    {self.config.background_filter.blur if self.config.background_filter.blur else 'NONE'}"
+        logger.info(
+            "  Background Blur:    %s",
+            self.config.background_filter.blur if self.config.background_filter.blur else "NONE",
         )
-        print("=" * 60)
-        print("Press CTRL-C to toggle pause/reload")
-        print("Press CTRL-\\ to exit")
+        logger.info("=" * 60)
+        logger.info("Press CTRL-C to stop")
 
         # Check if on-demand mode is active
         if self.monitor:
-            print("On-demand processing: enabled (pauses when no consumers)")
+            logger.info("On-demand processing: enabled (pauses when no consumers)")
         else:
-            print("On-demand processing: disabled")
+            logger.info("On-demand processing: disabled")
 
-        print("\nStarting pipeline... (performance stats every 30 frames)")
-        print("=" * 60)
+        logger.info("Starting pipeline... (performance stats every 30 frames)")
+        logger.info("=" * 60)
 
         while self.running:
             start_time = time.monotonic()
@@ -275,9 +290,9 @@ class ProcessingPipeline:
         """Toggle pause state and reload images."""
         self.paused = not self.paused
         if self.paused:
-            print("\nPaused - Processing stopped")
+            logger.info("Paused - Processing stopped")
         else:
-            print("\nResumed - Reloading images")
+            logger.info("Resumed - Reloading images")
             # Reload images
             if self.config.background_filter.file:
                 self.compositor.load_background(self.config.background_filter.file)

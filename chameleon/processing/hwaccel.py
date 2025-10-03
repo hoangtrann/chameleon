@@ -93,9 +93,7 @@ class HWAccelManager:
         except (FileNotFoundError, subprocess.TimeoutExpired):
             return False
 
-    def select_best(
-        self, preference: HWAccelMethod = HWAccelMethod.AUTO
-    ) -> HWAccelMethod:
+    def select_best(self, preference: HWAccelMethod = HWAccelMethod.AUTO) -> HWAccelMethod:
         """Select best available hardware acceleration method.
 
         Args:

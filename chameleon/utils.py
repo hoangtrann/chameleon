@@ -1,10 +1,12 @@
 """Utility functions for backward compatibility and filter parsing."""
 
-import sys
+import logging
 
 from cmapy import cmap_groups
 
 from chameleon.config import FilterConfig
+
+logger = logging.getLogger(__name__)
 
 # Extract all colormap names from cmapy groups
 colormaps = [cmap for group in cmap_groups for cmap in group["colormaps"]]
@@ -47,7 +49,7 @@ def parse_filter_string(filter_string: str) -> list[list]:
             # No more equals signs
             remaining = filter_string[i:].strip()
             if remaining and remaining not in ["no", "hologram", "tile", "crop"]:
-                print(f"Warning: Unknown filter '{remaining}'", file=sys.stderr)
+                logger.warning("Unknown filter '%s'", remaining)
             break
 
         # Get the filter name
@@ -124,24 +126,24 @@ def parse_filter_string(filter_string: str) -> list[list]:
                 opacity_val = int(value)
                 filters.append([name, opacity_val])
             except ValueError:
-                print(f"Warning: Invalid opacity value '{value}'", file=sys.stderr)
+                logger.warning("Invalid opacity value '%s'", value)
         elif name == "brightness" and value:
             try:
                 brightness_val = int(value)
                 filters.append([name, brightness_val])
             except ValueError:
-                print(f"Warning: Invalid brightness value '{value}'", file=sys.stderr)
+                logger.warning("Invalid brightness value '%s'", value)
         elif name == "cmap" and value:
             if value in colormaps:
                 filters.append([name, value])
             else:
-                print(f"Warning: Unknown colormap '{value}'", file=sys.stderr)
+                logger.warning("Unknown colormap '%s'", value)
         elif name == "blur" and value:
             try:
                 blur_val = int(value)
                 filters.append([name, blur_val])
             except ValueError:
-                print(f"Warning: Invalid blur value '{value}'", file=sys.stderr)
+                logger.warning("Invalid blur value '%s'", value)
         elif name == "solid" and value:
             try:
                 # Parse BGR color (e.g., "255,0,0")
@@ -149,11 +151,9 @@ def parse_filter_string(filter_string: str) -> list[list]:
                 if len(parts) == 3:
                     filters.append([name, tuple(parts)])
                 else:
-                    print(
-                        f"Warning: Invalid solid color '{value}' (expected B,G,R)", file=sys.stderr
-                    )
+                    logger.warning("Invalid solid color '%s' (expected B,G,R)", value)
             except ValueError:
-                print(f"Warning: Invalid solid color '{value}'", file=sys.stderr)
+                logger.warning("Invalid solid color '%s'", value)
         elif name == "mask-update-speed" and value:
             try:
                 speed_val = float(value)
@@ -162,7 +162,7 @@ def parse_filter_string(filter_string: str) -> list[list]:
                     speed_val = min(max(speed_val, 0), 100) / 100.0
                 filters.append([name, speed_val])
             except ValueError:
-                print(f"Warning: Invalid mask-update-speed value '{value}'", file=sys.stderr)
+                logger.warning("Invalid mask-update-speed value '%s'", value)
 
     return filters
 

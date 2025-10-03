@@ -1,8 +1,11 @@
 """Modern MediaPipe segmentation engine with GPU delegation support."""
 
+import logging
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 MEDIAPIPE_MODEL_URL = "https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter_landscape/float16/latest/selfie_segmenter_landscape.tflite"
 
@@ -53,22 +56,21 @@ class MediaPipeEngine:
         """
         import urllib.request
 
-        print(f"Downloading MediaPipe selfie segmentation model...")
+        logger.info("Downloading MediaPipe selfie segmentation model...")
         try:
             urllib.request.urlretrieve(MEDIAPIPE_MODEL_URL, str(target))
-            print(f"Model downloaded to {target}")
+            logger.info("Model downloaded to %s", target)
         except Exception as e:
             raise RuntimeError(f"Failed to download model: {e}") from e
 
     def _init_segmenter(self):
         """Initialize MediaPipe ImageSegmenter with GPU delegation."""
         try:
-            import mediapipe as mp
             from mediapipe.tasks import python
             from mediapipe.tasks.python import vision
 
-            print(f"\n[MediaPipe] Initializing segmentation engine...")
-            print(f"[MediaPipe] Model path: {self.model_path}")
+            logger.info("Initializing MediaPipe segmentation engine...")
+            logger.info("Model path: %s", self.model_path)
 
             # Configure base options with GPU delegation
             delegate = (
@@ -77,9 +79,7 @@ class MediaPipeEngine:
                 else python.BaseOptions.Delegate.CPU
             )
 
-            base_options = python.BaseOptions(
-                model_asset_path=self.model_path, delegate=delegate
-            )
+            base_options = python.BaseOptions(model_asset_path=self.model_path, delegate=delegate)
 
             # Configure the ImageSegmenter task
             options = vision.ImageSegmenterOptions(
@@ -91,14 +91,14 @@ class MediaPipeEngine:
             # Create the segmenter
             self.segmenter = vision.ImageSegmenter.create_from_options(options)
 
-            print(
-                f"[MediaPipe] Initialized with {'GPU' if self.use_gpu else 'CPU'} delegation"
+            logger.info(
+                "MediaPipe initialized with %s delegation",
+                "GPU" if self.use_gpu else "CPU",
             )
 
         except ImportError:
             raise RuntimeError(
-                "mediapipe is required for MediaPipe engine. "
-                "Install with: pip install mediapipe"
+                "mediapipe is required for MediaPipe engine. Install with: pip install mediapipe"
             ) from None
 
     def segment(self, frame: np.ndarray) -> np.ndarray:
@@ -120,9 +120,7 @@ class MediaPipeEngine:
         # Maintain aspect ratio by using width-based scaling
         target_w = 256
         target_h = int(target_w * orig_h / orig_w)
-        small_frame = cv2.resize(
-            frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR
-        )
+        small_frame = cv2.resize(frame, (target_w, target_h), interpolation=cv2.INTER_LINEAR)
 
         # Convert BGR to RGB (MediaPipe expects RGB)
         rgb_frame = cv2.cvtColor(small_frame, cv2.COLOR_BGR2RGB)
@@ -151,9 +149,7 @@ class MediaPipeEngine:
             return np.zeros((orig_h, orig_w), dtype=np.float32)
 
         # Upscale mask back to original resolution
-        mask_upscaled = cv2.resize(
-            mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR
-        )
+        mask_upscaled = cv2.resize(mask, (orig_w, orig_h), interpolation=cv2.INTER_LINEAR)
         return mask_upscaled
 
     def close(self):

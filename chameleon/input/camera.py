@@ -28,8 +28,12 @@ camera capture (not segmentation) is the performance bottleneck, which is
 highly unlikely given MediaPipe's computational cost.
 """
 
+import logging
+
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class RealCamera:
@@ -94,9 +98,10 @@ class RealCamera:
             name: Property name (for logging)
         """
         if not self.cap.set(prop, value):
-            print(
-                f"Warning: Cannot set camera property {name} to {value}. "
-                f"Defaulting to auto-detected property set by OpenCV"
+            logger.warning(
+                "Cannot set camera property %s to %s. Defaulting to auto-detected property set by OpenCV",
+                name,
+                value,
             )
 
     def read_frame(self) -> np.ndarray | None:

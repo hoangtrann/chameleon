@@ -1,9 +1,12 @@
 """Virtual camera output using v4l2loopback."""
 
+import logging
 import os
 
 import numpy as np
 import pyfakewebcam
+
+logger = logging.getLogger(__name__)
 
 
 class VirtualCameraOutput:
@@ -54,7 +57,7 @@ class VirtualCameraOutput:
             self.camera.schedule_frame(frame_rgb)
         except Exception as e:
             # Don't raise to avoid crashing the pipeline on transient errors
-            print(f"Warning: Failed to write frame to {self.device}: {e}")
+            logger.warning("Failed to write frame to %s: %s", self.device, e)
 
     def close(self):
         """Close the virtual camera."""

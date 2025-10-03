@@ -1,11 +1,14 @@
 """Person segmentation using various ML models."""
 
+import logging
 from pathlib import Path
 
 import numpy as np
 
 from chameleon.config import SegmentationModel
 from chameleon.engine.mediapipe import MediaPipeEngine
+
+logger = logging.getLogger(__name__)
 
 
 class SegmentationEngine:
@@ -91,7 +94,7 @@ class SegmentationEngine:
         if not model_name:
             raise ValueError(f"Unknown model: {model}")
 
-        print(f"Downloading and converting {model} model to ONNX...")
+        logger.info("Downloading and converting %s model to ONNX...", model)
         try:
             # Import ultralytics to download and export the model
             from ultralytics import YOLO
@@ -108,7 +111,7 @@ class SegmentationEngine:
             onnx_file = Path(f"{model_name}.onnx")
             if onnx_file.exists():
                 shutil.move(str(onnx_file), str(target))
-                print(f"Model converted and saved to {target}")
+                logger.info("Model converted and saved to %s", target)
             else:
                 raise FileNotFoundError(f"Expected ONNX file not found: {onnx_file}")
         except Exception as e:
@@ -125,15 +128,15 @@ class SegmentationEngine:
 
             import onnxruntime as ort
 
-            print(f"\n[Segmentation] Initializing {self.model_type.value} model...")
-            print(f"[Segmentation] Model path: {self.model_path}")
+            logger.info("Initializing %s model...", self.model_type.value)
+            logger.info("Model path: %s", self.model_path)
 
             # Build provider list with TensorRT for maximum performance
             providers = []
             if use_gpu:
                 # Try TensorRT first (1.5-2x faster than CUDA)
                 if self._check_tensorrt_available():
-                    print("[Segmentation] TensorRT available - using FP16 acceleration")
+                    logger.info("TensorRT available - using FP16 acceleration")
                     cache_path = str(Path.home() / ".cache" / "chameleon" / "tensorrt")
                     Path(cache_path).mkdir(parents=True, exist_ok=True)
                     # providers.append(
@@ -147,11 +150,11 @@ class SegmentationEngine:
                     #     )
                     # )
                 else:
-                    print("[Segmentation] TensorRT not available")
+                    logger.info("TensorRT not available")
 
                 # CUDA fallback
                 if "CUDAExecutionProvider" in ort.get_available_providers():
-                    print("[Segmentation] CUDA available")
+                    logger.info("CUDA available")
                     providers.append(
                         (
                             "CUDAExecutionProvider",
@@ -162,18 +165,14 @@ class SegmentationEngine:
                         )
                     )
                 else:
-                    print(
-                        "[Segmentation] WARNING: CUDA not available, falling back to CPU"
-                    )
+                    logger.warning("CUDA not available, falling back to CPU")
 
             # CPU fallback (always available)
             # providers.append("CPUExecutionProvider")
 
             # Session options for performance
             sess_options = ort.SessionOptions()
-            sess_options.graph_optimization_level = (
-                ort.GraphOptimizationLevel.ORT_ENABLE_ALL
-            )
+            sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
             sess_options.intra_op_num_threads = 2  # Don't hog all cores
 
             self.session = ort.InferenceSession(
@@ -181,14 +180,12 @@ class SegmentationEngine:
             )
             self.input_name = self.session.get_inputs()[0].name
 
-            # Print which provider is being used
+            # Log which provider is being used
             active_provider = self.session.get_providers()[0]
-            print(f"[Segmentation] Active provider: {active_provider}")
+            logger.info("Active provider: %s", active_provider)
             if active_provider == "CPUExecutionProvider":
-                print(
-                    "[Segmentation] ⚠️  WARNING: Using CPU inference - this will be VERY SLOW!"
-                )
-                print("[Segmentation] ⚠️  Install onnxruntime-gpu for GPU acceleration")
+                logger.warning("Using CPU inference - this will be VERY SLOW!")
+                logger.warning("Install onnxruntime-gpu for GPU acceleration")
 
         except ImportError:
             raise RuntimeError(
@@ -378,9 +375,7 @@ class SegmentationEngine:
         class_ids = class_scores.argmax(axis=1)
 
         # Filter for person class with confidence threshold
-        person_mask_indices = (class_ids == person_class_id) & (
-            max_scores >= confidence_threshold
-        )
+        person_mask_indices = (class_ids == person_class_id) & (max_scores >= confidence_threshold)
 
         if not person_mask_indices.any():
             # No person detected, return empty mask
@@ -405,9 +400,7 @@ class SegmentationEngine:
             combined_mask = masks.max(axis=0) if masks.shape[0] > 1 else masks[0]
 
             # Resize mask from 160x160 to 640x640 (model output size)
-            mask_640 = cv2.resize(
-                combined_mask, (640, 640), interpolation=cv2.INTER_LINEAR
-            )
+            mask_640 = cv2.resize(combined_mask, (640, 640), interpolation=cv2.INTER_LINEAR)
 
             # Remove letterbox padding and resize to original shape
             # Unpad
